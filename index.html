@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Actas Escuela Abierta - Colegio Nieves Cortes Picón</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { background-color: #f1f5f9; font-family: 'Inter', sans-serif; }
+        
+        @media (max-width: 768px) {
+            .mobile-stack { flex-direction: column; }
+            .sidebar { order: 2; width: 100% !important; }
+            .main-content { order: 1; width: 100% !important; }
+        }
+
+        .signature-pad-container { border: 2px solid #cbd5e1; border-radius: 12px; background: #fff; position: relative; overflow: hidden; }
+        
+        /* touch-action: none bloquea el deslizamiento de pantalla al firmar. Es VITAL. */
+        #signature-canvas { 
+            width: 100%; 
+            height: 160px; 
+            display: block; 
+            cursor: crosshair; 
+            touch-action: none; 
+            background-color: #ffffff; 
+        }
+        
+        .asignatura-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1rem; position: relative; margin-bottom: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        select, input, textarea { font-size: 16px !important; } 
+    </style>
+</head>
+<body class="p-2 md:p-6">
+
+    <div class="max-w-7xl mx-auto flex gap-6 mobile-stack">
+        
+        <div class="w-full md:w-1/3 lg:w-1/4 flex flex-col gap-4 sidebar">
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 text-center">
+                <h1 class="text-lg font-bold text-[#4682B4]">Nieves Cortes Picón</h1>
+                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Escuela Abierta</p>
+            </div>
+
+            <div class="bg-slate-800 p-5 rounded-2xl text-white shadow-lg space-y-4">
+                <h2 class="text-xs font-bold text-slate-400 uppercase border-b border-slate-700 pb-2">1. Configuración</h2>
+                
+                <input type="text" id="nombre-docente" class="w-full bg-slate-700 p-3 rounded-xl text-sm border-none mt-2" placeholder="Nombre del Docente">
+                <div class="grid grid-cols-2 gap-2">
+                    <select id="gradoGlobal" onchange="actualizarCursos()" class="bg-slate-700 p-3 rounded-xl text-sm border-none">
+                        <option value="">Grado</option>
+                        <script>for(let i=1;i<=11;i++) document.write(`<option value="${i}">${i}°</option>`);</script>
+                    </select>
+                    <select id="cursoGlobal" class="bg-slate-700 p-3 rounded-xl text-sm border-none">
+                        <option value="">Curso</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl border flex flex-col min-h-[250px]">
+                <h2 class="text-xs font-bold text-slate-400 mb-3 uppercase">2. Estudiantes</h2>
+                <div id="student-list" class="space-y-2 mb-4 overflow-y-auto max-h-[30vh]"></div>
+                <button onclick="crearActa()" class="mt-auto w-full bg-green-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-green-600">
+                    <i class="ph-bold ph-plus"></i> Añadir Estudiante
+                </button>
+            </div>
+
+            <button onclick="generarPDF()" class="w-full bg-[#4682B4] text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-blue-700">
+                <i class="ph-bold ph-download-simple"></i> DESCARGAR TODAS
+            </button>
+        </div>
+
+        <div class="flex-grow w-full md:w-2/3 lg:w-3/4 main-content">
+            <div id="editor-vacio" class="bg-white rounded-3xl p-12 text-center border-2 border-dashed border-slate-200 text-slate-400 h-full flex flex-col justify-center items-center">
+                <i class="ph-light ph-scroll text-6xl mb-4"></i>
+                <p>Crea o selecciona un acta en el panel izquierdo para comenzar.</p>
+            </div>
+
+            <div id="editor-acta" class="hidden space-y-6">
+                
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                        <h2 class="text-xl font-bold text-[#4682B4] flex items-center gap-2">
+                            <i class="ph-fill ph-users-three"></i> Acta de Escuela Abierta
+                        </h2>
+                        <button onclick="previsualizarPDF()" class="w-full md:w-auto bg-blue-50 text-[#4682B4] px-6 py-3 rounded-xl font-bold text-sm flex justify-center items-center gap-2 border border-blue-200 hover:bg-blue-100">
+                            <i class="ph-bold ph-eye"></i> Previsualizar PDF
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="md:col-span-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Nombre del Estudiante</label>
+                            <input type="text" id="cur-nombre" oninput="sincronizarTextos()" class="w-full p-3 bg-slate-50 border rounded-xl font-bold uppercase text-slate-700">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Acudiente</label>
+                            <input type="text" id="cur-acudiente" oninput="sincronizarTextos()" class="w-full p-3 bg-slate-50 border rounded-xl uppercase">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Cédula Acudiente</label>
+                            <input type="text" id="cur-cedula" oninput="sincronizarTextos()" class="w-full p-3 bg-slate-50 border rounded-xl">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                    <h3 class="font-bold text-slate-700 mb-4 uppercase text-sm border-b pb-2">1. Dificultades por Asignatura</h3>
+                    <div id="materias-container" class="space-y-4"></div>
+                    <button onclick="agregarMateria()" class="mt-4 w-full py-3 border-2 border-dashed border-blue-200 rounded-2xl text-blue-500 font-bold hover:bg-blue-50">
+                        + Agregar Asignatura a Evaluar
+                    </button>
+                </div>
+
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                    <h3 class="font-bold text-slate-700 mb-4 uppercase text-sm border-b pb-2">2. Observaciones y Acuerdos</h3>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-xs font-bold text-[#4682B4]">Observaciones del Docente Titular:</label>
+                                <textarea id="cur-obs-docente" oninput="sincronizarTextos()" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm h-28 mt-2" placeholder="Describa aquí el rendimiento, comportamiento o anotaciones del estudiante..."></textarea>
+                            </div>
+                            <div>
+                                <label class="text-xs font-bold text-slate-600">Observación General / Acudiente:</label>
+                                <textarea id="cur-obs" oninput="sincronizarTextos()" class="w-full p-3 bg-slate-50 border rounded-xl text-sm h-20 mt-2" placeholder="Comentarios del padre de familia o notas adicionales..."></textarea>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-xs font-bold text-[#4682B4]">Compromisos de Padres:</label>
+                                <div id="comp-padres-container" class="space-y-2 mt-2"></div>
+                                <button class="text-xs text-blue-600 font-bold mt-2" onclick="agregarCompromiso('padres')">+ Añadir compromiso</button>
+                            </div>
+                            <div>
+                                <label class="text-xs font-bold text-[#4682B4]">Recomendaciones / Docente:</label>
+                                <div id="comp-docentes-container" class="space-y-2 mt-2"></div>
+                                <button class="text-xs text-blue-600 font-bold mt-2" onclick="agregarCompromiso('docentes')">+ Añadir recomendación</button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-center mb-4 border-b pb-2">
+                        <h3 class="font-bold text-slate-700 uppercase text-sm">3. Firma del Acudiente</h3>
+                        <button onclick="limpiarFirma()" class="bg-red-100 text-red-600 px-3 py-1 rounded-lg text-[10px] font-bold hover:bg-red-200">BORRAR FIRMA</button>
+                    </div>
+                    <div class="signature-pad-container">
+                        <canvas id="signature-canvas" width="600" height="160"></canvas>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Escudo del colegio
+        const logoBase64 = "data:image/jpeg;base64,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";
+
+        const materiasComunes = ["Lengua Castellana", "Plan Lector", "Inglés", "Matemáticas", "Geometría", "Biología", "Física", "Química", "Sociales", "Informática", "Educación Física", "Ética y Religión", "Ajedrez / Cátedra de la Paz", "Artística", "Convivencia"];
+        const materiasMedia = ["Gestión Ambiental", "Ciencias Económicas", "Ciencias Políticas", "Ciencias Sociales", "Cátedra de la Paz"];
+
+        const descriptores = {
+            ser: [
+                "Falta de disposición y marcado desinterés hacia el aprendizaje. Dificultad para acatar las orientaciones del docente afectando su ritmo.", 
+                "Interrupciones constantes e irrespeto hacia compañeros o docentes, no acatando las normas básicas del manual de convivencia.", 
+                "Ausencia reiterada de responsabilidad en aspectos como puntualidad, presentación personal o cuidado de los recursos de clase."
+            ],
+            saber: [
+                "Dificultad evidente para asimilar conceptos básicos de la asignatura, mostrando vacíos teóricos que le impiden avanzar.", 
+                "Bajo rendimiento en evaluaciones y quices, evidenciando poca comprensión y falta de estructuración de ideas principales.", 
+                "No logra conectar el conocimiento teórico con las situaciones planteadas, demostrando un desempeño cognitivo deficiente."
+            ],
+            hacer: [
+                "Incumplimiento reiterado en la entrega de tareas, talleres y actividades asignadas para el trabajo dentro y fuera del aula.", 
+                "Falta de orden, pulcritud y dedicación en el desarrollo de actividades prácticas o procedimentales de la materia.", 
+                "Ausencia de trabajo autónomo, falta de esfuerzo extra para superar dificultades y apatía frente a los retos académicos."
+            ]
+        };
+
+        const opcionesCompromisos = {
+            padres: ["Asistir obligatoriamente a próximas reuniones.", "Supervisar el desarrollo de tareas diariamente.", "Mejorar la puntualidad y asistencia del menor.", "Mantener comunicación semanal con el docente.", "Restringir el uso de tecnología en horarios de estudio."],
+            docentes: ["Reportar de forma oportuna a coordinación.", "Enviar notas al observador del alumno.", "Establecer estrategias de nivelación si hay compromiso.", "Notificar nuevamente si la falta persiste."],
+            recomendaciones: ["Establecer un horario estricto de estudio.", "Iniciar seguimiento por orientación escolar.", "Aplicar correctivo disciplinario según manual."]
+        };
+
+        let actas = [];
+        let idActiva = null;
+        
+        // --- MOTOR DE FIRMA ROBUSTO ---
+        let canvas, ctx, dibujando = false;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            canvas = document.getElementById('signature-canvas');
+            ctx = canvas.getContext('2d');
+            
+            ctx.strokeStyle = "#000000"; 
+            ctx.lineWidth = 2.5; 
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // PointerEvents reemplaza Mouse y Touch unificándolos.
+            canvas.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                dibujando = true;
+                const pos = getPos(e);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+            });
+
+            canvas.addEventListener('pointermove', (e) => {
+                e.preventDefault();
+                if (!dibujando) return;
+                const pos = getPos(e);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+            });
+
+            const stopDraw = () => {
+                if (dibujando) {
+                    dibujando = false;
+                    guardarFirmaEnActa();
+                }
+            };
+
+            canvas.addEventListener('pointerup', stopDraw);
+            canvas.addEventListener('pointerout', stopDraw);
+            canvas.addEventListener('pointercancel', stopDraw);
+        });
+
+        // Calcula las coordenadas exactas escalando el CSS vs el Canvas real
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        function guardarFirmaEnActa() {
+            const acta = actas.find(a => a.id === idActiva);
+            if(acta) acta.firma = canvas.toDataURL('image/png');
+        }
+
+        function cargarFirmaEnCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const acta = actas.find(a => a.id === idActiva);
+            if(acta && acta.firma) {
+                const img = new Image();
+                img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                img.src = acta.firma;
+            }
+        }
+
+        function limpiarFirma() { 
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+            const acta = actas.find(a => a.id === idActiva);
+            if(acta) acta.firma = null; 
+        }
+        // ------------------------------
+
+        function actualizarCursos() {
+            const g = document.getElementById('gradoGlobal').value;
+            const c = document.getElementById('cursoGlobal');
+            c.innerHTML = '<option value="">Curso</option>';
+            if(g) {
+                for(let i=1;i<=5;i++) c.innerHTML += `<option value="${g}-0${i}">${g}-0${i}</option>`;
+            }
+        }
+
+        function crearActa() {
+            const g = document.getElementById('gradoGlobal').value;
+            if(!g) return alert("Seleccione un grado en Configuración primero.");
+            const id = Date.now();
+            actas.push({ 
+                id, nombre: '', acudiente: '', cedula: '', obs_docente: '', obs: '', 
+                materias: [], firma: null,
+                compromisos: { padres: [], docentes: [], recomendaciones: [] }
+            });
+            seleccionarActa(id);
+        }
+
+        function seleccionarActa(id) {
+            sincronizarTextos();
+            idActiva = id;
+            const acta = actas.find(a => a.id === id);
+            
+            document.getElementById('editor-vacio').classList.add('hidden');
+            document.getElementById('editor-acta').classList.remove('hidden');
+            
+            document.getElementById('cur-nombre').value = acta.nombre;
+            document.getElementById('cur-acudiente').value = acta.acudiente;
+            document.getElementById('cur-cedula').value = acta.cedula;
+            document.getElementById('cur-obs-docente').value = acta.obs_docente || '';
+            document.getElementById('cur-obs').value = acta.obs;
+            
+            renderMaterias();
+            renderTodosLosCompromisos();
+            cargarFirmaEnCanvas(); // Carga la firma si ya existía
+            
+            actualizarSidebar();
+        }
+
+        function actualizarSidebar() {
+            const list = document.getElementById('student-list');
+            list.innerHTML = '';
+            actas.forEach(a => {
+                const btn = document.createElement('div');
+                btn.className = `w-full p-3 rounded-xl text-left text-sm font-semibold transition-all cursor-pointer flex justify-between items-center ${a.id === idActiva ? 'bg-blue-100 text-[#4682B4] border-l-4 border-blue-600' : 'bg-slate-50 text-slate-600 border border-slate-200'}`;
+                btn.innerHTML = `<span class="truncate pr-2">${a.nombre || 'Nuevo Estudiante'}</span><i class="ph-bold ph-trash text-red-400 hover:text-red-600" onclick="eliminarActa(${a.id}, event)"></i>`;
+                btn.onclick = () => seleccionarActa(a.id);
+                list.appendChild(btn);
+            });
+        }
+
+        function eliminarActa(id, e) {
+            e.stopPropagation();
+            if(confirm("¿Eliminar esta acta?")) {
+                actas = actas.filter(a => a.id !== id);
+                if(idActiva === id) {
+                    idActiva = null;
+                    document.getElementById('editor-vacio').classList.remove('hidden');
+                    document.getElementById('editor-acta').classList.add('hidden');
+                }
+                actualizarSidebar();
+            }
+        }
+
+        function agregarMateria() {
+            actas.find(a => a.id === idActiva).materias.push({ nombre: '', ser: '', saber: '', hacer: '', obs: '' });
+            renderMaterias();
+        }
+
+        function renderMaterias() {
+            const container = document.getElementById('materias-container');
+            container.innerHTML = '';
+            const g = parseInt(document.getElementById('gradoGlobal').value);
+            const lista = g >= 10 ? [...materiasComunes, ...materiasMedia] : materiasComunes;
+            const mats = actas.find(a => a.id === idActiva).materias;
+
+            mats.forEach((m, idx) => {
+                const card = document.createElement('div');
+                card.className = 'asignatura-card border-l-4 border-l-blue-400';
+                card.innerHTML = `
+                    <button onclick="eliminarMateria(${idx})" class="absolute top-2 right-2 text-red-300 hover:text-red-500 font-bold px-2">×</button>
+                    
+                    <label class="text-sm font-bold text-slate-700 block mb-1">Asignatura que presenta dificultades</label>
+                    <select onchange="sincronizarMateria(${idx}, 'nombre', this.value)" class="w-full font-bold mb-4 border-b pb-2 text-sm bg-transparent outline-none text-[#4682B4]">
+                        <option value="">Seleccione Materia</option>
+                        ${lista.map(nom => `<option value="${nom}" ${m.nombre===nom?'selected':''}>${nom}</option>`).join('')}
+                    </select>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
+                        ${['ser', 'saber', 'hacer'].map(tipo => `
+                            <div>
+                                <label class="uppercase font-bold text-slate-500 block mb-1">Falla en ${tipo}</label>
+                                <select onchange="sincronizarMateria(${idx}, '${tipo}', this.value)" class="w-full p-2 border rounded-lg bg-blue-50">
+                                    <option value="">-- Seleccione --</option>
+                                    ${descriptores[tipo].map(d => `<option value="${d}" ${m[tipo]===d?'selected':''}>${d.substring(0,55)}...</option>`).join('')}
+                                </select>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function sincronizarMateria(idx, campo, valor) { actas.find(a => a.id === idActiva).materias[idx][campo] = valor; }
+        function eliminarMateria(idx) { actas.find(a => a.id === idActiva).materias.splice(idx, 1); renderMaterias(); }
+
+        function agregarCompromiso(tipo, valor = '') {
+            actas.find(a => a.id === idActiva).compromisos[tipo].push(valor);
+            renderCompromisos(tipo);
+        }
+
+        function renderTodosLosCompromisos() {
+            ['padres', 'docentes', 'recomendaciones'].forEach(tipo => renderCompromisos(tipo));
+        }
+
+        function renderCompromisos(tipo) {
+            const container = document.getElementById(`comp-${tipo}-container`);
+            container.innerHTML = '';
+            const listaValores = actas.find(a => a.id === idActiva).compromisos[tipo];
+            
+            listaValores.forEach((val, idx) => {
+                const div = document.createElement('div');
+                div.className = "flex gap-2 items-center";
+                
+                let selectHtml = `<select onchange="actualizarCompromiso('${tipo}', ${idx}, this.value)" class="w-full p-2 border rounded-lg bg-slate-50 text-[11px] flex-grow">
+                    <option value="">- Seleccione -</option>
+                    ${opcionesCompromisos[tipo] ? opcionesCompromisos[tipo].map(o => `<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('') : ''}
+                    <option value="otro" ${val && (!opcionesCompromisos[tipo] || !opcionesCompromisos[tipo].includes(val)) ? 'selected' : ''}>Otro...</option>
+                </select>`;
+
+                let extraInput = val && (!opcionesCompromisos[tipo] || !opcionesCompromisos[tipo].includes(val)) 
+                    ? `<input type="text" class="w-full p-2 border rounded-lg text-xs mt-1" value="${val}" onchange="actualizarCompromiso('${tipo}', ${idx}, this.value)">` 
+                    : '';
+
+                div.innerHTML = `<div class="w-full flex flex-col">${selectHtml}${extraInput}</div>
+                                 <button class="text-red-500 font-bold px-2 bg-red-50 rounded-lg h-8" onclick="eliminarCompromiso('${tipo}', ${idx})">×</button>`;
+                container.appendChild(div);
+            });
+        }
+
+        function actualizarCompromiso(tipo, idx, valor) {
+            if(valor === 'otro') {
+                actas.find(a => a.id === idActiva).compromisos[tipo][idx] = 'Escriba aquí...';
+                renderCompromisos(tipo);
+            } else {
+                actas.find(a => a.id === idActiva).compromisos[tipo][idx] = valor;
+            }
+        }
+        function eliminarCompromiso(tipo, idx) { actas.find(a => a.id === idActiva).compromisos[tipo].splice(idx, 1); renderCompromisos(tipo); }
+
+        function sincronizarTextos() {
+            if(!idActiva) return;
+            const a = actas.find(ac => ac.id === idActiva);
+            if(!a) return;
+            a.nombre = document.getElementById('cur-nombre').value;
+            a.acudiente = document.getElementById('cur-acudiente').value;
+            a.cedula = document.getElementById('cur-cedula').value;
+            a.obs_docente = document.getElementById('cur-obs-docente').value;
+            a.obs = document.getElementById('cur-obs').value;
+            actualizarSidebar();
+        }
+
+        // --- PREVISUALIZAR Y GENERAR PDF MEJORADO ---
+        function previsualizarPDF() {
+            sincronizarTextos();
+            const actaSeleccionada = actas.find(a => a.id === idActiva);
+            if(!actaSeleccionada) return alert("Selecciona un acta primero para previsualizar.");
+            
+            const doc = construirPDF([actaSeleccionada]);
+            if(doc) window.open(URL.createObjectURL(doc.output('blob')), '_blank');
+        }
+
+        function generarPDF() {
+            sincronizarTextos();
+            const doc = construirPDF(actas);
+            if(doc) {
+                const grado = document.getElementById('gradoGlobal').value || 'General';
+                doc.save(`EscuelaAbierta_${grado}_${Date.now()}.pdf`);
+            }
+        }
+
+        function construirPDF(listaActas) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const colorFranja = [70, 130, 180];
+
+            if(!listaActas || listaActas.length === 0 || !listaActas[0]) {
+                alert("Debes agregar al menos un estudiante con datos para generar el acta.");
+                return null;
+            }
+
+            for(let i=0; i < listaActas.length; i++) {
+                const a = listaActas[i];
+                if(i > 0) doc.addPage();
+
+                // Cabecera Institucional
+                doc.setDrawColor(200); doc.rect(10, 10, 190, 24);
+                try { doc.addImage(logoBase64, 'JPEG', 12, 12, 20, 20); } catch (e) {}
+
+                doc.setFont("helvetica", "bold").setFontSize(15).setTextColor(70, 130, 180);
+                doc.text("COLEGIO NIEVES CORTES PICÓN", 105, 18, {align:"center"});
+                doc.setFontSize(10).setTextColor(0);
+                doc.text("ACTA DE SEGUIMIENTO ACADÉMICO - ESCUELA ABIERTA", 105, 25, {align:"center"});
+
+                // Info General (Textos Negros - textColor: 0)
+                doc.autoTable({
+                    startY: 38, theme: 'grid',
+                    head: [[{content: 'INFORMACIÓN DE ESCUELA ABIERTA', colSpan: 4, styles: {fillColor: colorFranja, halign: 'left', textColor: 255}}]],
+                    body: [
+                        ['ESTUDIANTE', a.nombre.toUpperCase(), 'GRADO/CURSO', (document.getElementById('gradoGlobal').value || 'N/A') + '° (' + (document.getElementById('cursoGlobal').value || 'N/A') + ')'],
+                        ['ACUDIENTE', a.acudiente.toUpperCase(), 'DOCUMENTO', a.cedula],
+                        ['DOCENTE TITULAR', document.getElementById('nombre-docente').value.toUpperCase(), 'FECHA', new Date().toLocaleDateString()]
+                    ],
+                    styles: { fontSize: 8.5, textColor: 0 } // <-- FUENTE TOTALMENTE NEGRA
+                });
+
+                // Materias (Textos Negros y Estructura clara)
+                const bodyMats = a.materias.map(m => [
+                    m.nombre.toUpperCase(), 
+                    `SABER: ${m.saber || 'N/A'}\n\nSER: ${m.ser || 'N/A'}\n\nHACER: ${m.hacer || 'N/A'}`
+                ]);
+                doc.autoTable({
+                    startY: doc.lastAutoTable.finalY + 5,
+                    head: [
+                        [{content: '1. DIFICULTADES ENCONTRADAS', colSpan: 2, styles: {fillColor: colorFranja, halign: 'center', textColor: 255}}],
+                        [
+                            {content: 'ASIGNATURA QUE PRESENTA DIFICULTADES', styles: {fillColor: [230,230,230], fontStyle: 'bold', textColor: 0, halign: 'center'}}, 
+                            {content: 'COMPONENTES (SABER, SER, HACER)', styles: {fillColor: [230,230,230], fontStyle: 'bold', textColor: 0, halign: 'center'}}
+                        ]
+                    ],
+                    body: bodyMats.length ? bodyMats : [['-', 'No se registraron materias.']],
+                    styles: { fontSize: 8, cellPadding: 4, textColor: 0, lineColor: [200, 200, 200], lineWidth: 0.1 }, // <-- FUENTE TOTALMENTE NEGRA
+                    columnStyles: { 0: { cellWidth: 50, fontStyle: 'bold', valign: 'middle', halign: 'center' } }
+                });
+
+                // Acuerdos y Compromisos
+                let compPadres = a.compromisos.padres.filter(v=>v).join(' • ');
+                let compDocentes = a.compromisos.docentes.filter(v=>v).join(' • ');
+
+                doc.autoTable({
+                    startY: doc.lastAutoTable.finalY + 5, theme: 'grid',
+                    head: [[{content: '2. OBSERVACIONES Y COMPROMISOS', colSpan: 2, styles: {fillColor: colorFranja, textColor: 255}}]],
+                    body: [
+                        ['Observación del Docente', a.obs_docente || 'N/A'],
+                        ['Compromiso Acudiente', compPadres || 'N/A'],
+                        ['Decisión / Recomendación', compDocentes || 'N/A'],
+                        ['Justificación / Observación Extra', a.obs || 'N/A']
+                    ],
+                    styles: { fontSize: 8.5, cellPadding: 4, textColor: 0 }, // <-- FUENTE TOTALMENTE NEGRA
+                    columnStyles: { 0: { cellWidth: 45, fontStyle: 'bold' } }
+                });
+
+                // Firmas Finales
+                let fY = doc.lastAutoTable.finalY + 30;
+                if(fY > 260) { doc.addPage(); fY = 40; }
+                
+                doc.setFont("helvetica", "bold").setFontSize(9).setTextColor(0);
+                doc.text("____________________________", 20, fY);
+                doc.text("DOCENTE TITULAR", 20, fY + 5);
+                
+                doc.text("____________________________", 120, fY);
+                doc.text("ACUDIENTE", 120, fY + 5);
+                doc.setFont("helvetica", "normal").setFontSize(8);
+                doc.text(a.acudiente.toUpperCase() + "\nCC: " + a.cedula, 120, fY + 10);
+
+                if(a.firma) {
+                    try { doc.addImage(a.firma, 'PNG', 120, fY - 15, 45, 14); } catch(e) {}
+                }
+            }
+
+            return doc;
+        }
+    </script>
+</body>
+</html>
